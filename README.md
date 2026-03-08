@@ -20,8 +20,8 @@
 
 - `pkf-local.js`：油猴脚本，劫持网页引擎通信并转接到本地 WS。
 - `servepkf2.py`：推荐使用的服务端。每个 WS 连接对应一个独立引擎进程。
-- `servepkf.py`：旧版服务端（单进程共享），保留作对照。
-- `pikafish-clip.js`：从网页中截取的部分引擎相关代码片段，便于分析。
+- `ref/servepkf.py`：旧版服务端（单进程共享），保留作对照参考。
+- `ref/pikafish-clip.js`：从网页中截取的部分引擎相关代码片段，pkf-local的开发参考。
 
 ## 环境要求
 
