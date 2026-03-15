@@ -1,6 +1,6 @@
-# pikafish-hack
+# pikafish-web-to-local
 
-把 `xiangqiai.com` 网页版象棋界面内置 WASM 引擎，替换为本机 `Pikafish` 可执行文件象棋引擎，同时尽量不影响网页原有功能。
+把 `xiangqiai.com` （皮卡鱼象棋网页版）象棋界面内置 WASM 引擎，替换为本机 `Pikafish` 可执行文件象棋引擎，同时尽量不影响网页原有功能。
 
 ## 项目原理
 
@@ -18,7 +18,7 @@
 
 ## 文件说明
 
-- `pkf-local.js`：油猴脚本，劫持网页引擎通信并转接到本地 WS。
+- `pkf-local.js`：油猴脚本，拦截网页向引擎发起的通信并转接到本地 WebSocket。
 - `servepkf2.py`：推荐使用的服务端。每个 WS 连接对应一个独立引擎进程。
 - `ref/servepkf.py`：旧版服务端（单进程共享），保留作对照参考。
 - `ref/pikafish-clip.js`：从网页中截取的部分引擎相关代码片段，pkf-local的开发参考。
@@ -43,10 +43,10 @@ pip install websockets
 
 ### 2) 修改引擎路径
 
-编辑 [`servepkf2.py`](/c:/Users/80563/Desktop/pikafish-hack/servepkf2.py)，并确认以下中的可配置项：
+编辑 [`servepkf2.py`](./servepkf2.py)，并确认以下中的可配置项：
 
 - `ENGINE_PATH`：改成你本机 `pikafish-*.exe` 的绝对路径
-- `HASH`：默认强制为 `512`，可自行修改（这是因为网页代码虽然支持最大为512MB，但实测大于384MB时会只写为384MB），而至于线程数可在网页端配置
+- `HASH`：单位为MB，默认强制为 `512`，可自行在`servepkf2.py`代码中修改，会统一覆盖浏览器里的对应HASH设置（这是因为虽然网页里能配置的最大值为512MB，但实测设置大于384MB时网页向WASM引擎发送的HASH大小设置是只有384MB）；而至于线程数可在网页端配置
 - `HOST`：默认 `localhost`
 - `PORT`：默认 `8765`
 
@@ -78,7 +78,7 @@ python servepkf2.py
 ## 设计要点
 
 - 无侵入替换：不改网页源码，只在运行时劫持引擎函数。
-- 保留回退：WS 未连接时，脚本会回落到网页原 WASM `sendCommand`。
+- 保留回退：WebSocket 未连接时，脚本会回落到网页原 WASM `sendCommand`。
 - 多标签隔离：`servepkf2.py` 为每个 WS 连接创建独立引擎进程，减少相互干扰。
 - Hash 覆写：检测到 `setoption name Hash value ...` 时，服务端会统一改写为 `HASH` 常量。
 
@@ -101,7 +101,7 @@ python servepkf2.py
 
 ## 安全与风险说明
 
-- 本项目依赖本地开放的 WS 端口（默认仅 `localhost`）。
+- 本项目依赖本地开放的 WebSocket 端口（默认仅 `localhost`）。
 - 请勿把服务绑定到公网地址，避免被外部访问。
 - 用户脚本会接管网页引擎通信，升级目标网站后可能需要适配。
 
