@@ -9,7 +9,7 @@ import (
 
 // setupLogger 根据 LogConfig 配置全局 log 输出：
 //   - Console=true：写到 stdout
-//   - File=true：附加写到 exe 同目录下的日志文件（追加模式）
+//   - File=true：附加写到 exe 所在目录的 logs/ 下（追加模式）
 //   - 两者皆 false：写到 io.Discard（静默）
 //
 // 返回的关闭函数会在程序退出前被调用，用于关闭日志文件句柄。
@@ -22,18 +22,13 @@ func setupLogger(logCfg LogConfig) (func() error, error) {
 
 	var f *os.File
 	if logCfg.File {
-		path := logCfg.FilePath
-		if path == "" {
-			path = "pkf-local-go.log"
+		path, err := resolveLogPath(logCfg.FilePath)
+		if err != nil {
+			return nil, err
 		}
-		if !filepath.IsAbs(path) {
-			dir, err := exeDir()
-			if err != nil {
-				return nil, err
-			}
-			path = filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, err
 		}
-		var err error
 		f, err = os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
 			return nil, err
@@ -55,4 +50,19 @@ func setupLogger(logCfg LogConfig) (func() error, error) {
 		}
 		return nil
 	}, nil
+}
+
+// resolveLogPath 将配置中的相对路径固定到 exe 目录下的 logs/。
+func resolveLogPath(filePath string) (string, error) {
+	if filePath == "" {
+		filePath = defaultLogFilePath
+	}
+	if err := validateLogFilePath(filePath); err != nil {
+		return "", err
+	}
+	dir, err := exeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "logs", filepath.Clean(filePath)), nil
 }

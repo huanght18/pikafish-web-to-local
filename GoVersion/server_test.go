@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
@@ -60,6 +61,15 @@ func TestValidateConfig(t *testing.T) {
 			t.Fatal("expected invalid max_connections to be rejected")
 		}
 	})
+
+	t.Run("log path traversal", func(t *testing.T) {
+		candidate := DefaultConfig()
+		candidate.EnginePath = enginePath
+		candidate.Log.FilePath = filepath.Join("..", "outside.log")
+		if err := ValidateConfig(candidate); err == nil {
+			t.Fatal("expected escaping log.file_path to be rejected")
+		}
+	})
 }
 
 func TestExeDirUsesWorkingDirectoryDuringGoRunOrTest(t *testing.T) {
@@ -99,5 +109,38 @@ func TestLoadConfigCreatesEditableFileInWorkingDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("generated config isn't accessible: %v", err)
+	}
+}
+
+func TestSetupLoggerCreatesLogsDirectoryBesideExecutable(t *testing.T) {
+	tempDir := t.TempDir()
+	oldWorkingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldWriter := log.Writer()
+	t.Cleanup(func() {
+		log.SetOutput(oldWriter)
+		_ = os.Chdir(oldWorkingDirectory)
+	})
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatal(err)
+	}
+
+	closeLogger, err := setupLogger(LogConfig{
+		File:     true,
+		FilePath: filepath.Join("nested", "server.log"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Print("test")
+	if err := closeLogger(); err != nil {
+		t.Fatal(err)
+	}
+
+	want := filepath.Join(tempDir, "logs", "nested", "server.log")
+	if _, err := os.Stat(want); err != nil {
+		t.Fatalf("log file wasn't created below logs/: %v", err)
 	}
 }

@@ -12,6 +12,56 @@ const source = fs.readFileSync(
 
 function createHarness() {
   const sockets = [];
+  const elementsById = new Map();
+  const footer = {
+    children: [],
+    append(element) {
+      element.parentElement?.removeChild?.(element);
+      this.children.push(element);
+      element.parentElement = this;
+      elementsById.set(element.id, element);
+    },
+    removeChild(element) {
+      this.children = this.children.filter((child) => child !== element);
+      element.parentElement = null;
+      elementsById.delete(element.id);
+    },
+  };
+  const document = {
+    documentElement: {},
+    addEventListener() {},
+    createElement(tagName) {
+      return {
+        tagName: tagName.toUpperCase(),
+        id: "",
+        textContent: "",
+        title: "",
+        style: {},
+        parentElement: null,
+        attributes: {},
+        setAttribute(name, value) {
+          this.attributes[name] = value;
+        },
+        remove() {
+          this.parentElement?.removeChild(this);
+        },
+      };
+    },
+    getElementById(id) {
+      return elementsById.get(id) ?? null;
+    },
+    querySelector(selector) {
+      return selector === ".footer" ? footer : null;
+    },
+  };
+  class FakeMutationObserver {
+    constructor(callback) {
+      this.callback = callback;
+    }
+
+    observe() {}
+  }
+
   class FakeWebSocket {
     static CONNECTING = 0;
     static OPEN = 1;
@@ -52,6 +102,8 @@ function createHarness() {
 
   const sandbox = {
     window: {},
+    document,
+    MutationObserver: FakeMutationObserver,
     WebSocket: FakeWebSocket,
     console: { log() {}, warn() {} },
     setTimeout,
@@ -60,7 +112,7 @@ function createHarness() {
   };
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox);
-  return { window: sandbox.window, sockets };
+  return { window: sandbox.window, sockets, document, footer };
 }
 
 async function patchedEngine(harness) {
@@ -124,9 +176,27 @@ async function testInitialFailureFallsBackAsOneSession() {
   ]);
 }
 
+async function testConnectionTagTracksLocalService() {
+  const harness = createHarness();
+  const tag = harness.document.getElementById("pkf-local-connection-tag");
+  assert.equal(tag?.textContent, "油猴已加载");
+
+  await patchedEngine(harness);
+  const [socket] = harness.sockets;
+  assert.equal(tag?.textContent, "油猴已加载 · 连接中");
+
+  socket.open();
+  assert.equal(tag?.textContent, "油猴已加载 · 本地已连接");
+  assert.equal(tag?.parentElement, harness.footer);
+
+  socket.remoteClose();
+  assert.equal(tag?.textContent, "油猴已加载 · 本地未连接");
+}
+
 Promise.resolve()
   .then(testQueuesUntilConnectedAndRestoresAfterDisconnect)
   .then(testInitialFailureFallsBackAsOneSession)
+  .then(testConnectionTagTracksLocalService)
   .then(() => console.log("pkf-local tests: PASS"))
   .catch((error) => {
     console.error(error);

@@ -45,9 +45,13 @@ exe 启动时会读**同目录**下的 `config.json`。文件不存在则自动�
 | `max_connections` | int | 同时运行的引擎进程上限；范围 1–32，默认 4 |
 | `log.console` | bool | 是否输出到终端 |
 | `log.file` | bool | 是否额外写到日志文件 |
-| `log.file_path` | string | 日志文件路径，相对 exe 所在目录 |
+| `log.file_path` | string | 日志文件在 `logs/` 内的相对路径 |
 
 命令行 `-host` / `-port` 可临时覆盖配置文件的对应字段。
+
+开启 `log.file` 后会自动创建 EXE 所在目录下的 `logs/`。例如
+`file_path: "pkf-local-go.log"` 最终写入 `<EXE目录>/logs/pkf-local-go.log`；
+绝对路径和跳出该目录的 `..` 路径会被拒绝。
 
 ## 编译
 

@@ -18,6 +18,7 @@ import websockets
 
 
 CONFIG_FILENAME = "config.json"
+LOG_DIRNAME = "logs"
 DEFAULTS = {
     "host": "localhost",
     "port": 8765,
@@ -116,6 +117,18 @@ def validate_config(cfg):
         raise ValueError("log.console and log.file must be booleans")
     if not isinstance(log_cfg.get("file_path"), str) or not log_cfg["file_path"].strip():
         raise ValueError("log.file_path must be a non-empty string")
+    validate_log_file_path(log_cfg["file_path"])
+
+
+def validate_log_file_path(file_path):
+    normalized_log_path = os.path.normpath(file_path)
+    if (
+        os.path.isabs(normalized_log_path)
+        or os.path.splitdrive(normalized_log_path)[0]
+        or normalized_log_path in {".", os.pardir}
+        or normalized_log_path.startswith(os.pardir + os.sep)
+    ):
+        raise ValueError("log.file_path must stay inside the logs directory")
 
 
 def apply_config(cfg):
@@ -135,12 +148,17 @@ def apply_config(cfg):
     LOG_FILE_PATH = cfg["log"]["file_path"]
 
 
+def resolve_log_path(file_path):
+    """把配置中的相对文件名固定解析到脚本目录下的 logs/。"""
+    validate_log_file_path(file_path)
+    return os.path.join(script_dir(), LOG_DIRNAME, os.path.normpath(file_path))
+
+
 def _open_log_file():
     if not LOG_FILE:
         return None
-    log_path = LOG_FILE_PATH
-    if not os.path.isabs(log_path):
-        log_path = os.path.join(script_dir(), log_path)
+    log_path = resolve_log_path(LOG_FILE_PATH)
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
     return open(log_path, "a", encoding="utf-8", errors="ignore")
 
 

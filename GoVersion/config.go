@@ -16,7 +16,7 @@ type LogConfig struct {
 	Console bool `json:"console"`
 	// File 是否输出到文件。
 	File bool `json:"file"`
-	// FilePath 日志文件相对 exe 所在目录的路径。
+	// FilePath 日志文件相对 logs 目录的路径。
 	FilePath string `json:"file_path"`
 }
 
@@ -174,6 +174,19 @@ func ValidateConfig(cfg Config) error {
 	}
 	if strings.TrimSpace(cfg.Log.FilePath) == "" {
 		return errors.New("log.file_path must be a non-empty string")
+	}
+	if err := validateLogFilePath(cfg.Log.FilePath); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateLogFilePath(filePath string) error {
+	cleanLogPath := filepath.Clean(filePath)
+	if filepath.IsAbs(cleanLogPath) || filepath.VolumeName(cleanLogPath) != "" ||
+		cleanLogPath == "." || cleanLogPath == ".." ||
+		strings.HasPrefix(cleanLogPath, ".."+string(filepath.Separator)) {
+		return errors.New("log.file_path must stay inside the logs directory")
 	}
 	return nil
 }

@@ -1,139 +1,186 @@
-# pikafish-hack
+# pikafish-web-to-local
 
-把 `xiangqiai.com` 网页版象棋界面内置 WASM 引擎，替换为本机 `Pikafish` 可执行文件象棋引擎，同时尽量不影响网页原有功能。
+把 `xiangqiai.com` 网页内置的 Pikafish WASM 引擎替换为本机
+`Pikafish` 可执行文件，同时复用网页原有的棋盘、分析结果和交互界面。
 
-## 项目原理
+项目提供两套本地服务端：
 
-本项目由两部分组成：
+- **Python 版**：配置和调试方便，是本文档的主要说明对象。
+- **Go 版**：可编译为独立 EXE，根目录只介绍使用入口；实现和构建细节请查看
+  [GoVersion/README.md](GoVersion/README.md)。
 
-1. 浏览器端油猴脚本（`tampermonkey/pkf-local.js`）
-2. 本地 WebSocket 服务（推荐使用 `main.py`，另提供 Go 版）
+## 工作原理
 
-工作流程：
+1. `tampermonkey/pkf-local.js` 在网页初始化 `window.Pikafish` 时包装
+   `sendCommand`。
+2. 网页的 UCI 命令通过 `ws://localhost:8765` 发给本地服务。
+3. 本地服务为每个 WebSocket 连接启动独立的 Pikafish 进程。
+4. 服务把命令写入引擎 stdin，并将 stdout 逐行送回网页原有解析器。
 
-1. 网页初始化 `window.Pikafish` 时，油猴脚本拦截并包装其 `sendCommand`。
-2. 网页发出的 UCI 命令优先走 `ws://localhost:8765` 发给本地服务。
-3. 本地服务把命令转发给 `pikafish-*.exe`，再把标准输出逐行回传网页。
-4. 网页继续使用原有 UI 解析逻辑，因此交互和显示基本保持不变。
+Python 版和 Go 版使用相同的 WebSocket 协议及油猴脚本，同一时间只需启动其中一个。
 
-## 文件说明
+## 目录结构
 
-- `tampermonkey/pkf-local.js`：油猴脚本，劫持网页引擎通信并转接到本地 WS。
-- `main.py`：Python 版服务端（文件名沿用历史，旧叫 `servepkf2.py`）。每个 WS 连接对应一个独立引擎进程。
-- `GoVersion/`：行为对齐的 Go 版，可编译为不依赖 Python 环境的单文件 EXE。
-- `start/start.bat`：Windows 快捷启动脚本，会优先使用项目内 `.venv`。
-- `icon/`：Go EXE 使用的默认图标资源。
-- `test/test_main.py`：Python 配置与命令改写的单元测试。
-- `test/test_pkf_local.js`：油猴脚本排队、断线恢复和 WASM 回退测试。
-- `ref/servepkf.py`：旧版服务端（单进程共享），保留作对照参考。
-- `ref/pikafish-clip.js`：从网页中截取的部分引擎相关代码片段，pkf-local的开发参考。
+| 路径 | 用途 |
+|---|---|
+| `main.py` | Python 服务端入口 |
+| `requirements.txt` | Python 依赖 |
+| `start/start.bat` | Python 版 Windows 快捷启动脚本 |
+| `tampermonkey/pkf-local.js` | 浏览器端油猴脚本 |
+| `test/` | Python 与油猴脚本测试 |
+| `icon/` | Go EXE 图标资源 |
+| `ref/` | 旧服务端及目标网页引擎代码参考 |
+| `GoVersion/` | Go 服务端、配置示例、测试和详细文档 |
 
-## 环境要求
+## 安装油猴脚本
 
-- Windows（当前脚本路径和示例以 Windows 为主）
+1. 在浏览器安装 Tampermonkey 或兼容扩展。
+2. 新建用户脚本，粘贴 `tampermonkey/pkf-local.js` 的全部内容并保存。
+3. 确认脚本已启用，且 `@match` 包含 `https://xiangqiai.com/*`。
+
+应先启动 Python 或 Go 本地服务，再打开或刷新目标网页。
+
+## Python 版
+
+### 环境要求
+
+- Windows
 - Python 3.10+
-- `websockets` Python 库
-- Tampermonkey（或兼容用户脚本扩展）
-- 本地 Pikafish 可执行文件（如 `pikafish-bmi2.exe`）
+- 本地 Pikafish 可执行文件，例如 `pikafish-bmi2.exe`
 
-## 快速开始
-
-> 注意：请确定先启动本地服务（python main.py）再加载网页（激活油猴脚本），若网页启动后启动本地服务，则再刷新网页即可
-
-### 1) 安装 Python 依赖
+### 安装依赖
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-### 2) 修改引擎路径
+如果项目中已有 `.venv`，可以使用：
 
-首次启动 `main.py` 会**自动在脚本同目录生成 `config.json`**（默认配置），编辑它即可。字段含义与 `GoVersion/config.example.json` 一致：
+```powershell
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
 
-- `engine_path`：本机 `pikafish-*.exe` 的绝对路径
-- `hash_mb`：默认强制为 `512`（这是因为网页代码虽然支持最大为 512MB，但实测大于 384MB 时会只写为 384MB），可在配置里改
-- `host`：仅允许回环地址 `localhost`、`127.0.0.1` 或 `::1`
-- `port`：`8765`
-- `drain_banner`：是否吞掉引擎首行 banner，默认 `true`
-- `allowed_origins`：允许连接本地服务的网页来源，默认仅 `https://xiangqiai.com`
-- `max_connections`：同时运行的引擎进程上限，默认 `4`
-- `log`：日志配置（`console` 输出到终端，`file` 写到 `log.file_path`）
+### 生成并修改配置
 
-如果你不想编辑 json，**也可以直接改 `main.py` 顶部 `DEFAULTS` 字典里的默认值**。
-
-### 3) 启动本地服务
+首次运行：
 
 ```powershell
 python main.py
 ```
 
-Windows 也可以直接双击 `start\start.bat`。
+程序会在项目根目录生成 `config.json` 后退出。至少需要把
+`engine_path` 改成本机 Pikafish 的绝对路径，然后再次启动。
 
-看到类似输出即表示服务正常监听：
+| 字段 | 默认值/作用 |
+|---|---|
+| `engine_path` | Pikafish 可执行文件绝对路径 |
+| `host` | `localhost`；仅允许回环地址 |
+| `port` | `8765`，需与油猴脚本中的 `WS_URL` 一致 |
+| `hash_mb` | `512`；覆盖网页发送的 Hash 大小 |
+| `drain_banner` | 是否过滤引擎启动 banner |
+| `allowed_origins` | 默认仅允许 `https://xiangqiai.com` |
+| `max_connections` | 同时运行的引擎进程上限，默认 `4` |
+| `log.console` | 是否输出终端日志 |
+| `log.file` | 是否写文件日志 |
+| `log.file_path` | `logs/` 内的相对文件路径 |
+
+当 `log.file` 为 `true` 时，程序会自动创建项目根目录下的 `logs/`。
+例如 `file_path: "pkf-local-python.log"` 最终写入
+`logs/pkf-local-python.log`。绝对路径或通过 `..` 跳出日志目录的配置会被拒绝。
+
+### 启动
+
+```powershell
+python main.py
+```
+
+也可以双击：
+
+```text
+start\start.bat
+```
+
+正常启动后会看到：
 
 ```text
 [Python] ws server listening on ws://localhost:8765
 ```
 
-### 4) 安装油猴脚本
+浏览器控制台出现 `[HACK] ws connected`，服务端出现
+`[WEB -> ENGINE]` 和 `[ENGINE -> WEB]`，即表示本地引擎已接管。
 
-1. 打开 Tampermonkey，新建脚本。
-2. 粘贴 `tampermonkey/pkf-local.js` 的全部内容并保存。
-3. 确认 `@match` 包含 `https://xiangqiai.com/*`。
+## Go 版
 
-### 5) 打开网页版验证
+Go 版与 Python 版协议一致，主要适合生成无需 Python 环境的独立 EXE：
 
-访问 `https://xiangqiai.com/` 并打开开发者工具：
+```powershell
+cd GoVersion
+go build -ldflags "-s -w" -o pkf-local-go.exe .
+```
 
-- 若看到 `[HACK] installed (document-start).` 和 `ws connected`，说明脚本生效。
-- Python 终端出现 `[WEB -> ENGINE]` / `[ENGINE -> WEB]` 日志，说明转发正常。
+使用要点：
 
-## 设计要点
+- 配置文件为 EXE 所在目录下的 `config.json`。
+- 首次运行会生成配置文件；编辑 `engine_path` 后重新启动。
+- 文件日志写入 EXE 所在目录下的 `logs/`。
+- 使用相同的 `tampermonkey/pkf-local.js`，不要同时启动 Python 和 Go 服务。
 
-- 无侵入替换：不改网页源码，只在运行时劫持引擎函数。
-- 一致回退：初次连接期间命令先排队；连接失败时整批交给 WASM。中途断线会向 WASM 重放必要状态，避免两个引擎状态分叉。
-- 多标签隔离：`main.py` 为每个 WS 连接创建独立引擎进程，减少相互干扰。
-- Hash 覆写：检测到 `setoption name Hash value ...` 时，服务端会统一改写为配置中的 `hash_mb`。
-- 本地防护：浏览器 Origin 白名单、连接数上限和断线子进程回收。
+完整的配置字段、编译、图标嵌入、平台注意事项和实现对应关系见
+[GoVersion/README.md](GoVersion/README.md)。
 
-> 当前注入点是主页面的 `window.Pikafish`，对应网站的多线程引擎路径。若网站回退到在 Web Worker 内初始化的单线程引擎，该会话可能继续使用 WASM。
+## 关键设计
+
+- **会话隔离**：每个网页连接独占一个 Pikafish 进程，刷新页面即可重建引擎并清空 Hash。
+- **一致回退**：初次连接期间先缓存命令；本地连接失败时整批交给网页 WASM。
+- **断线恢复**：本地连接中断后，向 WASM 重放必要的 UCI 配置、局面和搜索状态。
+- **Hash 覆写**：精确识别 `setoption name Hash value ...`，统一使用配置中的
+  `hash_mb`。
+- **本地防护**：限制监听地址、浏览器 Origin、消息大小和同时运行的引擎数量。
+- **进程回收**：连接断开或服务退出时终止并等待对应的引擎进程。
+
+> 当前注入点是主页面的 `window.Pikafish`，对应网站的多线程引擎路径。
+> 如果网站改用在 Web Worker 内初始化的单线程引擎，该会话可能继续使用 WASM。
 
 ## 常见问题
 
-### 网页无响应或仍在用 WASM 引擎
+### 浏览器仍在使用 WASM
 
-- 检查 Python 服务是否已启动并监听 `ws://localhost:8765`。
-- 检查浏览器控制台是否有 `[HACK]` 日志。
-- 检查油猴脚本是否启用、`@match` 是否正确。
-- 确认网站正在使用可由 `window.Pikafish` 注入的多线程引擎模式。
+- 确认 Python 或 Go 服务已经启动，且端口与 `WS_URL` 一致。
+- 查看浏览器控制台是否出现 `[HACK] installed` 和 `ws connected`。
+- 确认油猴脚本已启用且目标网站使用多线程引擎模式。
 
-### 无法启动引擎进程
+### 无法启动 Pikafish
 
-- 确认 `config.json` 的 `engine_path` 真实存在，且可在命令行直接运行。
-- 避免路径包含权限受限目录，必要时用管理员权限启动终端。
+- 检查对应 `config.json` 中的 `engine_path`。
+- 确认路径指向真实文件，并且当前用户具有运行权限。
+- Python 与 Go 的配置文件位置不同，不要混用。
 
-### 多个网页标签互相影响
+### 连接数量达到上限
 
-- 使用 `main.py`，不要用旧版 `servepkf.py`。
-
-## 安全与风险说明
-
-- 本项目依赖本地开放的 WS 端口（默认仅 `localhost`）。
-- 默认只接受 `https://xiangqiai.com` 发起的浏览器连接；本机无 Origin 客户端仍可用于调试。
-- 服务端会拒绝绑定非回环地址，避免无意暴露到局域网或公网。
-- 用户脚本会接管网页引擎通信，升级目标网站后可能需要适配。
-
-## 免责声明
-
-本项目仅用于技术研究与个人学习，请遵守目标网站的服务条款与当地法律法规。
+每个网页标签都会占用一个引擎进程。关闭不再使用的标签，或在确认内存充足后调整
+`max_connections`。
 
 ## 开发检查
+
+Python 与油猴脚本：
 
 ```powershell
 python -m unittest discover -s test -v
 node --check tampermonkey/pkf-local.js
 node test/test_pkf_local.js
+```
+
+Go：
+
+```powershell
 cd GoVersion
 go test ./...
 go vet ./...
 ```
+
+## 安全与免责声明
+
+服务端只允许绑定回环地址，默认只接受 `https://xiangqiai.com` 发起的浏览器连接。
+不要修改代码把服务暴露到局域网或公网。
+
+本项目仅用于技术研究与个人学习，请遵守目标网站的服务条款与当地法律法规。

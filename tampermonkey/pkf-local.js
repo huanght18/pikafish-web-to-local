@@ -10,10 +10,94 @@
 
   const WS_URL = "ws://localhost:8765";
   const CONNECT_TIMEOUT_MS = 1500;
+  const CONNECTION_TAG_ID = "pkf-local-connection-tag";
+  const CONNECTION_TAG_STATES = {
+    loaded: {
+      text: "油猴已加载",
+      title: "pkf-local 油猴脚本已加载，等待本地引擎初始化",
+      border: "rgba(148, 163, 184, 0.8)",
+      background: "rgba(71, 85, 105, 0.82)",
+    },
+    connecting: {
+      text: "油猴已加载 · 连接中",
+      title: `正在连接 ${WS_URL}`,
+      border: "rgba(250, 204, 21, 0.8)",
+      background: "rgba(161, 98, 7, 0.86)",
+    },
+    connected: {
+      text: "油猴已加载 · 本地已连接",
+      title: `已连接到 ${WS_URL}`,
+      border: "rgba(74, 222, 128, 0.75)",
+      background: "rgba(22, 163, 74, 0.82)",
+    },
+    disconnected: {
+      text: "油猴已加载 · 本地未连接",
+      title: `未连接到 ${WS_URL}，当前使用网页 WASM 引擎`,
+      border: "rgba(251, 146, 60, 0.82)",
+      background: "rgba(194, 65, 12, 0.84)",
+    },
+  };
+  let connectionTagState = "loaded";
+
+  function syncConnectionTag() {
+    if (typeof document === "undefined") return;
+
+    const existing = document.getElementById(CONNECTION_TAG_ID);
+    const footer = document.querySelector(".footer");
+    if (!footer) return;
+
+    const tag = existing ?? document.createElement("span");
+    if (!existing) {
+      tag.id = CONNECTION_TAG_ID;
+      tag.setAttribute("role", "status");
+      tag.setAttribute("aria-live", "polite");
+      Object.assign(tag.style, {
+        alignSelf: "center",
+        marginLeft: "8px",
+        padding: "0 5px",
+        borderRadius: "999px",
+        color: "#f0fdf4",
+        fontSize: "0.55rem",
+        lineHeight: "1.35",
+        whiteSpace: "nowrap",
+      });
+    }
+
+    const state = CONNECTION_TAG_STATES[connectionTagState];
+    tag.textContent = state.text;
+    tag.title = state.title;
+    tag.style.border = `1px solid ${state.border}`;
+    tag.style.background = state.background;
+    if (tag.parentElement !== footer) footer.append(tag);
+  }
+
+  function setConnectionTagState(state) {
+    connectionTagState = state;
+    syncConnectionTag();
+  }
+
+  function watchConnectionTagHost() {
+    if (typeof document === "undefined" || typeof MutationObserver === "undefined") return;
+
+    const start = () => {
+      if (!document.documentElement) return false;
+      const observer = new MutationObserver(() => {
+        if (!document.getElementById(CONNECTION_TAG_ID)) syncConnectionTag();
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+      syncConnectionTag();
+      return true;
+    };
+
+    if (!start()) document.addEventListener("readystatechange", start, { once: true });
+  }
+
+  watchConnectionTagHost();
 
   // 每个网页引擎实例拥有自己的 WS，和服务端“一连接一进程”的模型对应。
   // 初次连接期间先排队，不把同一会话拆到本地引擎和 WASM 两边。
   function createBridge(onLine, onFallback) {
+    setConnectionTagState("connecting");
     let socket = null;
     let state = "connecting"; // connecting | local | wasm | closed
     let pending = [];
@@ -22,6 +106,7 @@
     const switchToWasm = (reason, replayPending) => {
       if (state === "wasm" || state === "closed") return;
       const queued = replayPending ? pending.splice(0) : null;
+      setConnectionTagState("disconnected");
       state = "wasm";
       clearTimeout(timer);
       console.warn(`[HACK] ${reason}; using webpage WASM for this engine session`);
@@ -34,6 +119,7 @@
     } catch (error) {
       console.warn("[HACK] cannot create websocket:", error);
       state = "wasm";
+      setConnectionTagState("disconnected");
       queueMicrotask(() => onFallback([]));
     }
 
@@ -49,6 +135,7 @@
           return;
         }
         state = "local";
+        setConnectionTagState("connected");
         clearTimeout(timer);
         console.log("[HACK] ws connected:", WS_URL);
         const queued = pending.splice(0);
@@ -94,6 +181,7 @@
         }
       },
       close() {
+        setConnectionTagState("loaded");
         state = "closed";
         pending = [];
         clearTimeout(timer);

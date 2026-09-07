@@ -48,6 +48,29 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "max_connections"):
             main.validate_config(cfg)
 
+    def test_validate_config_rejects_log_path_outside_logs(self):
+        cfg = copy.deepcopy(main.DEFAULTS)
+        cfg["engine_path"] = os.path.abspath(__file__)
+        cfg["log"]["file_path"] = os.path.join("..", "outside.log")
+        with self.assertRaisesRegex(ValueError, "logs directory"):
+            main.validate_config(cfg)
+
+
+class LogTests(unittest.TestCase):
+    def test_log_file_is_created_under_script_logs_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                mock.patch.object(main, "script_dir", return_value=temp_dir),
+                mock.patch.object(main, "LOG_FILE", True),
+                mock.patch.object(main, "LOG_FILE_PATH", os.path.join("nested", "server.log")),
+            ):
+                handle = main._open_log_file()
+                handle.write("test\n")
+                handle.close()
+
+            expected = os.path.join(temp_dir, "logs", "nested", "server.log")
+            self.assertTrue(os.path.isfile(expected))
+
 
 class CommandTests(unittest.TestCase):
     def test_hash_command_is_rewritten_case_insensitively(self):
