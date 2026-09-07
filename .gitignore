@@ -1,0 +1,55 @@
+# ============================================================
+# pikafish-web-to-local 根 .gitignore
+# ============================================================
+# 规则说明：
+#  - Python 虚拟环境与编译缓存
+#  - Go 编译产物 + Go 1.20+ 的 build 备份文件
+#  - 包含本机引擎路径的运行期配置文件
+#  - Windows 快捷方式（路径与本机绑定）
+#  - 通用 IDE / 编辑器临时文件
+#  - 系统垃圾文件
+# ============================================================
+
+# ---------- Python ----------
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# ---------- Go (GoVersion/) ----------
+# Go 编译产物（每次 build 都会重新生成，体积大）
+GoVersion/pkf-local-go.exe
+GoVersion/pkf-local-go.exe~
+
+# 运行期配置：含用户本机 pikafish 引擎绝对路径，绝不能提交
+GoVersion/config.json
+
+# 注：GoVersion/pkf-local-go.syso 故意保留跟踪 —
+#     让别人 clone 后直接 `go build` 即可得到带图标的 exe，无需先装 rsrc。
+
+# ---------- 用户私有资源 ----------
+# Windows 快捷方式（路径与本机绑定，无跨平台意义）
+*.lnk
+# 注：bitbug_favicon_x128.ico 作为项目默认图标资源已被跟踪。
+
+# ---------- IDE / 编辑器 ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# ---------- 系统垃圾 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# ---------- 日志 ----------
+*.log

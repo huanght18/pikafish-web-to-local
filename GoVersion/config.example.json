@@ -1,0 +1,12 @@
+{
+  "host": "localhost",
+  "port": 8765,
+  "engine_path": "D:\\Personal\\ChineseChess\\pikafish-20260131\\pikafish-bmi2.exe",
+  "hash_mb": 512,
+  "drain_banner": true,
+  "log": {
+    "console": true,
+    "file": false,
+    "file_path": "pkf-local-go.log"
+  }
+}
