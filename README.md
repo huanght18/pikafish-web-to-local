@@ -1,6 +1,6 @@
 # pikafish-web-to-local
 
-把 `xiangqiai.com` 网页内置的 Pikafish WASM 引擎替换为本机
+把 `xiangqiai.com`（皮卡鱼象棋网页版）内置的 Pikafish WASM 引擎替换为本机
 `Pikafish` 可执行文件，同时复用网页原有的棋盘、分析结果和交互界面。
 
 项目提供两套本地服务端：
