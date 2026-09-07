@@ -24,16 +24,18 @@ __pycache__/
 GoVersion/pkf-local-go.exe
 GoVersion/pkf-local-go.exe~
 
-# 运行期配置：含用户本机 pikafish 引擎绝对路径，绝不能提交
-GoVersion/config.json
-
 # 注：GoVersion/pkf-local-go.syso 故意保留跟踪 —
 #     让别人 clone 后直接 `go build` 即可得到带图标的 exe，无需先装 rsrc。
+
+# ---------- 运行期配置（含用户本机引擎路径，绝不能提交） ----------
+# Python 版：项目根目录的 config.json
+# Go 版：GoVersion/config.json（命名一致便于记忆，实际目录隔离）
+config.json
 
 # ---------- 用户私有资源 ----------
 # Windows 快捷方式（路径与本机绑定，无跨平台意义）
 *.lnk
-# 注：bitbug_favicon_x128.ico 作为项目默认图标资源已被跟踪。
+# 注：icon/bitbug_favicon_x128.ico 作为项目默认图标资源已被跟踪。
 
 # ---------- IDE / 编辑器 ----------
 .vscode/

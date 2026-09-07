@@ -1,9 +1,13 @@
 {
   "host": "localhost",
   "port": 8765,
-  "engine_path": "D:\\Personal\\ChineseChess\\pikafish-20260131\\pikafish-bmi2.exe",
+  "engine_path": "C:\\path\\to\\pikafish-bmi2.exe",
   "hash_mb": 512,
   "drain_banner": true,
+  "allowed_origins": [
+    "https://xiangqiai.com"
+  ],
+  "max_connections": 4,
   "log": {
     "console": true,
     "file": false,

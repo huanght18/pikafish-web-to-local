@@ -1,12 +1,12 @@
-// pkf-local-go：把 servepkf2.py 的功能用 Go 重写。
+// pkf-local-go：把 main.py 的功能用 Go 重写（原文件名 servepkf2.py）。
 //
 // 工作流：
-//  1. 浏览器端的油猴脚本 pkf-local.js 拦截 window.Pikafish.sendCommand，
+//  1. 浏览器端的油猴脚本 ../tampermonkey/pkf-local.js 拦截 window.Pikafish.sendCommand，
 //     把每条 UCI 命令作为一条 text message 发到 ws://<host>:<port>。
 //  2. 本服务为每条 WS 连接 fork 一个 Pikafish 引擎子进程，
 //     双向转发 UCI 命令与引擎输出，关闭时清理子进程。
 //
-// 与 servepkf2.py 行为对齐：每连接独立引擎、吞 banner、Hash 覆写。
+// 与 main.py 行为对齐（原文件名 servepkf2.py）：每连接独立引擎、吞 banner、Hash 覆写。
 // 配置通过同目录下的 config.json 加载；首次启动会自动生成示例文件。
 package main
 
@@ -15,9 +15,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -33,12 +35,16 @@ func main() {
 	)
 	flag.Parse()
 
-	cfg, path, err := LoadConfig()
+	cfg, path, created, err := LoadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[FATAL] load config: %v\n", err)
 		os.Exit(1)
 	}
-	log.Printf("[Go] config loaded: %s", path)
+	if created {
+		fmt.Printf("[INFO] wrote default config: %s\n", path)
+		fmt.Println("[INFO] edit engine_path if needed, then restart")
+		return
+	}
 
 	if *flagHost != "" {
 		log.Printf("[Go] flag override host: %s -> %s", cfg.Host, *flagHost)
@@ -48,6 +54,10 @@ func main() {
 		log.Printf("[Go] flag override port: %d -> %d", cfg.Port, *flagPort)
 		cfg.Port = *flagPort
 	}
+	if err := ValidateConfig(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "[FATAL] invalid config: %v\n", err)
+		os.Exit(1)
+	}
 
 	closeLogger, err := setupLogger(cfg.Log)
 	if err != nil {
@@ -56,16 +66,12 @@ func main() {
 	}
 	defer func() { _ = closeLogger() }()
 
-	if cfg.EnginePath == "" {
-		fmt.Fprintln(os.Stderr, "[FATAL] engine_path is empty, edit config.json")
-		os.Exit(1)
-	}
-
 	applyConfig(cfg)
+	log.Printf("[Go] config loaded: %s", path)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", wsHandler)
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -81,6 +87,8 @@ func main() {
 		log.Printf("[Go] ws server listening on ws://%s", addr)
 		log.Printf("[Go] engine: %s", cfg.EnginePath)
 		log.Printf("[Go] hash override: %d MB", cfg.HashMB)
+		log.Printf("[Go] allowed origins: %v", cfg.AllowedOrigins)
+		log.Printf("[Go] max connections: %d", cfg.MaxConnections)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErr <- err
 		}
@@ -93,16 +101,22 @@ func main() {
 	select {
 	case sig := <-stop:
 		log.Printf("[Go] received %v, shutting down...", sig)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(ctx); err != nil {
-			log.Printf("[WARN] server shutdown: %v", err)
-		}
 	case err := <-serverErr:
 		if err != nil {
-			log.Printf("[FATAL] listen: %v", err)
-			os.Exit(1)
+			log.Printf("[ERR] listen: %v", err)
 		}
+	}
+
+	// http.Server.Shutdown 不会关闭 WebSocket 这类 hijacked 连接，先显式
+	// 关闭它们，触发各 handler 杀死并回收对应的引擎进程。
+	shutdownWebSockets()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("[WARN] server shutdown: %v", err)
+	}
+	if !waitForConnections(ctx) {
+		log.Printf("[WARN] timed out waiting for engine sessions to stop")
 	}
 	log.Println("[Go] bye")
 }

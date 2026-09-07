@@ -1,4 +1,4 @@
-module github.com/yourname/pkf-local-go
+module github.com/huanght18/pikafish-web-to-local/GoVersion
 
 go 1.22
 
