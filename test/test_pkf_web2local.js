@@ -5,10 +5,30 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const source = fs.readFileSync(
-  path.join(__dirname, "..", "tampermonkey", "pkf-web2local.js"),
-  "utf8",
-);
+const repoRoot = path.join(__dirname, "..");
+const userscriptPath = path.join(repoRoot, "tampermonkey", "pkf-web2local.js");
+const extensionScriptPath = path.join(repoRoot, "extension", "pkf-web2local.js");
+const manifestPath = path.join(repoRoot, "extension", "manifest.json");
+const source = fs.readFileSync(userscriptPath, "utf8");
+
+function testExtensionPackage() {
+  const extensionSource = fs.readFileSync(extensionScriptPath, "utf8");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const userscriptVersion = source.match(/^\/\/ @version\s+(.+)$/m)?.[1].trim();
+
+  assert.equal(extensionSource, source, "extension and userscript sources must stay in sync");
+  assert.equal(manifest.manifest_version, 3);
+  assert.equal(manifest.version, userscriptVersion);
+  assert.deepEqual(manifest.content_scripts, [
+    {
+      matches: ["https://xiangqiai.com/*"],
+      js: ["pkf-web2local.js"],
+      run_at: "document_start",
+      world: "MAIN",
+      all_frames: false,
+    },
+  ]);
+}
 
 function createHarness() {
   const sockets = [];
@@ -178,26 +198,27 @@ async function testInitialFailureFallsBackAsOneSession() {
 
 async function testConnectionTagTracksLocalService() {
   const harness = createHarness();
-  const tag = harness.document.getElementById("pkf-local-connection-tag");
-  assert.equal(tag?.textContent, "油猴已加载");
+  const tag = harness.document.getElementById("pkf-web2local-connection-tag");
+  assert.equal(tag?.textContent, "桥接已加载");
 
   await patchedEngine(harness);
   const [socket] = harness.sockets;
-  assert.equal(tag?.textContent, "油猴已加载 · 连接中");
+  assert.equal(tag?.textContent, "桥接已加载 · 连接中");
 
   socket.open();
-  assert.equal(tag?.textContent, "油猴已加载 · 本地已连接");
+  assert.equal(tag?.textContent, "桥接已加载 · 本地已连接");
   assert.equal(tag?.parentElement, harness.footer);
 
   socket.remoteClose();
-  assert.equal(tag?.textContent, "油猴已加载 · 本地未连接");
+  assert.equal(tag?.textContent, "桥接已加载 · 本地未连接");
 }
 
 Promise.resolve()
+  .then(testExtensionPackage)
   .then(testQueuesUntilConnectedAndRestoresAfterDisconnect)
   .then(testInitialFailureFallsBackAsOneSession)
   .then(testConnectionTagTracksLocalService)
-  .then(() => console.log("pkf-local tests: PASS"))
+  .then(() => console.log("pkf-web2local tests: PASS"))
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;

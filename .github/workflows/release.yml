@@ -26,15 +26,23 @@ jobs:
         working-directory: GoVersion
         run: go test ./...
 
-      - name: Verify userscript version
+      - name: Test browser extension and userscript
+        run: |
+          node --check extension/pkf-web2local.js
+          node test/test_pkf_web2local.js
+
+      - name: Verify browser script versions
         shell: bash
         run: |
           set -euo pipefail
 
           script_version="$(sed -n 's|^// @version[[:space:]]*||p' tampermonkey/pkf-web2local.js | tr -d '\r')"
+          extension_version="$(node -p "require('./extension/manifest.json').version")"
           release_version="${GITHUB_REF_NAME#v}"
           test -n "${script_version}"
           test "${script_version}" = "${release_version}"
+          test "${extension_version}" = "${release_version}"
+          cmp tampermonkey/pkf-web2local.js extension/pkf-web2local.js
 
       - name: Build and package
         shell: bash
@@ -53,6 +61,7 @@ jobs:
           )
           cp GoVersion/config.example.json "${package_dir}/"
           cp tampermonkey/pkf-web2local.js "${package_dir}/pkf-web2local.user.js"
+          cp -R extension "${package_dir}/extension"
 
           if [[ -d GoVersion/release-assets ]]; then
             cp -R GoVersion/release-assets/. "${package_dir}/"

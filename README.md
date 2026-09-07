@@ -11,13 +11,13 @@
 
 ## 工作原理
 
-1. `tampermonkey/pkf-web2local.js` 在网页初始化 `window.Pikafish` 时包装
+1. `extension/pkf-web2local.js` 在网页初始化 `window.Pikafish` 时包装
    `sendCommand`。
 2. 网页的 UCI 命令通过 `ws://localhost:8765` 发给本地服务。
 3. 本地服务为每个 WebSocket 连接启动独立的 Pikafish 进程。
 4. 服务把命令写入引擎 stdin，并将 stdout 逐行送回网页原有解析器。
 
-Python 版和 Go 版使用相同的 WebSocket 协议及油猴脚本，同一时间只需启动其中一个。
+Python 版和 Go 版使用相同的 WebSocket 协议及浏览器扩展，同一时间只需启动其中一个。
 
 ## 目录结构
 
@@ -27,17 +27,25 @@ Python 版和 Go 版使用相同的 WebSocket 协议及油猴脚本，同一时�
 | `config.example.json` | Python 配置模板，使用假的引擎路径 |
 | `requirements.txt` | Python 依赖 |
 | `start/start.bat` | Python 版 Windows 快捷启动脚本 |
-| `tampermonkey/pkf-web2local.js` | 浏览器端油猴脚本 |
-| `test/` | Python 与油猴脚本测试 |
+| `extension/` | Chrome/Edge Manifest V3 扩展（推荐） |
+| `tampermonkey/pkf-web2local.js` | 兼容旧安装方式的油猴脚本 |
+| `test/` | Python 与浏览器桥接脚本测试 |
 | `icon/` | Go EXE 图标资源 |
 | `ref/` | 旧服务端及目标网页引擎代码参考 |
 | `GoVersion/` | Go 服务端、配置示例、测试和详细文档 |
 
-## 安装油猴脚本
+## 安装浏览器扩展
 
-1. 在浏览器安装 Tampermonkey 或兼容扩展。
-2. 新建用户脚本，粘贴 `tampermonkey/pkf-web2local.js` 的全部内容并保存。
-3. 确认脚本已启用，且 `@match` 包含 `https://xiangqiai.com/*`。
+推荐使用项目自带的 Chrome/Edge 扩展，不再依赖 Tampermonkey：
+
+1. Chrome 打开 `chrome://extensions/`；Edge 打开 `edge://extensions/`。
+2. 开启“开发者模式”。
+3. 点击“加载已解压的扩展程序”，选择项目的 `extension/` 文件夹。
+4. 确认 `pkf-web2local` 已启用，然后刷新目标网页。
+
+也可以继续使用兼容的油猴脚本：在 Tampermonkey 中新建脚本，粘贴
+`tampermonkey/pkf-web2local.js` 的全部内容并保存。扩展与油猴脚本不要同时启用，
+否则页面可能被重复注入。
 
 应先启动 Python 或 Go 本地服务，再打开或刷新目标网页。
 
@@ -112,7 +120,7 @@ start\start.bat
 [Python] ws server listening on ws://localhost:8765
 ```
 
-浏览器控制台出现 `[HACK] ws connected`，服务端出现
+浏览器控制台出现 `[pkf-web2local] ws connected`，服务端出现
 `[WEB -> ENGINE]` 和 `[ENGINE -> WEB]`，即表示本地引擎已接管。
 
 ## Go 版
@@ -131,7 +139,7 @@ go build -ldflags "-s -w" -o pkf-local-go.exe .
 - 交互输入同样支持 `/`、`\` 和带引号的拖入路径；手动编辑 JSON 时
   反斜杠需要写成 `\\`。
 - 文件日志写入 EXE 所在目录下的 `logs/`。
-- 使用相同的 `tampermonkey/pkf-web2local.js`，不要同时启动 Python 和 Go 服务。
+- 使用相同的 `extension/` 浏览器扩展，不要同时启动 Python 和 Go 服务。
 
 完整的配置字段、编译、图标嵌入、平台注意事项和实现对应关系见
 [GoVersion/README.md](GoVersion/README.md)。
@@ -142,15 +150,16 @@ go build -ldflags "-s -w" -o pkf-local-go.exe .
 无需向仓库提交 EXE 或 ZIP。例如：
 
 ```powershell
-git tag -a v0.1.0 -m "Release v0.1.0"
-git push origin v0.1.0
+git tag -a v0.2.0 -m "Release v0.2.0"
+git push origin v0.2.0
 ```
 
-Release 资产命名为 `pkf-web2local-v0.1.0-windows-amd64.zip`，解压后只有一个
+Release 资产命名为 `pkf-web2local-v0.2.0-windows-amd64.zip`，解压后只有一个
 同名目录，其中包含 `pkf-web2local.exe`、`config.example.json`、带版本号的
-`pkf-web2local.user.js` 和用户初始化说明。工作流会检查油猴脚本的 `@version` 与
-发布标签一致。以后需要随包分发的静态文件可以放入 `GoVersion/release-assets/`；
-本机 `config.json`、日志和 `dist/` 构建目录不会提交或发布。
+`extension/`、兼容用的 `pkf-web2local.user.js` 和用户初始化说明。工作流会检查
+扩展版本、油猴脚本 `@version` 与发布标签一致，并检查两份脚本内容完全相同。
+以后需要随包分发的静态文件可以放入 `GoVersion/release-assets/`；本机
+`config.json`、日志和 `dist/` 构建目录不会提交或发布。
 
 ## 关键设计
 
@@ -170,8 +179,8 @@ Release 资产命名为 `pkf-web2local-v0.1.0-windows-amd64.zip`，解压后只�
 ### 浏览器仍在使用 WASM
 
 - 确认 Python 或 Go 服务已经启动，且端口与 `WS_URL` 一致。
-- 查看浏览器控制台是否出现 `[HACK] installed` 和 `ws connected`。
-- 确认油猴脚本已启用且目标网站使用多线程引擎模式。
+- 查看浏览器控制台是否出现 `[pkf-web2local] installed` 和 `ws connected`。
+- 确认浏览器扩展或油猴脚本已启用，且目标网站使用多线程引擎模式。
 
 ### 无法启动 Pikafish
 
@@ -186,7 +195,7 @@ Release 资产命名为 `pkf-web2local-v0.1.0-windows-amd64.zip`，解压后只�
 
 ## 开发检查
 
-Python 与油猴脚本：
+Python 与浏览器脚本：
 
 ```powershell
 python -m unittest discover -s test -v

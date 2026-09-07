@@ -11,7 +11,8 @@
 - 浏览器 Origin 白名单和同时运行的引擎数量限制
 - 服务退出时主动关闭 WS，并等待对应引擎完成回收
 
-油猴脚本 `../tampermonkey/pkf-web2local.js` **无需任何改动**，因为协议沿用"一行一条 text message"。
+浏览器扩展 `../extension/` 与兼容油猴脚本使用同一份桥接逻辑，协议沿用
+“一行一条 text message”。
 
 ## 目录结构
 
@@ -128,7 +129,7 @@ go run .
 - `cmd.Wait()` 必须在 `Process.Kill()` 之后调用，否则 Windows 上会留僵尸进程 / 句柄。
 - `gorilla/websocket` 的 `Upgrader.CheckOrigin` 会校验 `allowed_origins`；无 Origin 的本机原生客户端仍可调试。
 
-## 与 `../tampermonkey/pkf-web2local.js` 的协议契约
+## 与浏览器扩展的协议契约
 
 - WS 帧类型：仅 `TextMessage`。
 - 每条 UCI 命令作为**一条 text message**，不含 `\n`（服务端 trim 后回填 `\n` 写入引擎）。
@@ -137,7 +138,7 @@ go run .
 
 ## 常见问题
 
-- **油猴脚本回退到 WASM**：本服务未启动、连接超时、端口不一致或 Origin 未在白名单。检查 `[Go] ws server listening on ws://...` 是否出现。
+- **浏览器扩展回退到 WASM**：本服务未启动、连接超时、端口不一致或 Origin 未在白名单。检查 `[Go] ws server listening on ws://...` 是否出现。
 - **提示输入引擎路径**：当前 `engine_path` 不存在。可粘贴或拖入 Pikafish EXE，路径中的 `/` 和 `\` 均可。
 - **`[ERR] start engine: ...`**：文件存在但没有运行权限或无法启动，必要时检查安全软件和文件权限。
 - **多标签页面同时使用**：每个标签 = 一个独立引擎进程，与 Python 版一致，刷新页面引擎即重建。

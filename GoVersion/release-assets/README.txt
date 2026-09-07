@@ -3,13 +3,14 @@ pkf-web2local - 首次使用说明
 
 1. 请先把整个 ZIP 解压到一个可写目录，不要直接在压缩包内运行。
 2. 本程序不包含 Pikafish 引擎，请事先准备好 Pikafish 的 Windows EXE。
-3. 在浏览器中安装 Tampermonkey，然后打开包内的 pkf-web2local.user.js，确认安装并
-   启用。若浏览器没有自动打开安装页，请在 Tampermonkey 中新建脚本，用该文件
-   的完整内容替换编辑器内容后保存。
-4. 双击 pkf-web2local.exe。
-5. 首次运行会根据 config.example.json 创建 config.json，并询问 Pikafish EXE
+3. Chrome 打开 chrome://extensions/，Edge 打开 edge://extensions/。开启开发者
+   模式，点击“加载已解压的扩展程序”，选择包内的 extension 文件夹。
+4. 如需兼容旧方式，也可以安装包内的 pkf-web2local.user.js。不要同时启用浏览器
+   扩展和油猴脚本，否则可能重复注入。
+5. 双击 pkf-web2local.exe。
+6. 首次运行会根据 config.example.json 创建 config.json，并询问 Pikafish EXE
    的实际路径。可以粘贴路径或把文件拖入窗口，/ 和 \ 两种分隔符均支持。
-6. 路径验证成功后服务会继续运行。使用网页期间请保持程序窗口开启。
+7. 路径验证成功后服务会继续运行。使用网页期间请保持程序窗口开启。
 
 配置说明
 --------
@@ -24,5 +25,5 @@ pkf-web2local - 首次使用说明
 
 - 首先查看程序窗口显示的错误信息。
 - 如果启用了 config.json 中的 log.file，日志位于同目录的 logs 文件夹。
-- 网页没有连接时，请确认包内的油猴脚本已安装启用，并确认没有同时运行
+- 网页没有连接时，请确认浏览器扩展或油猴脚本已启用，并确认没有同时运行
   Python 版和 Go 版服务。
