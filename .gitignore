@@ -57,3 +57,7 @@ $RECYCLE.BIN/
 *.log
 logs/
 GoVersion/logs/
+
+# ---------- 发布产物 ----------
+# 本地打包目录；正式产物由 GitHub Actions 上传到 Release。
+/dist/

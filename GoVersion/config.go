@@ -1,14 +1,20 @@
 package main
 
 import (
+	"bufio"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+//go:embed config.example.json
+var embeddedConfigExample []byte
 
 // LogConfig 日志相关配置。
 type LogConfig struct {
@@ -28,7 +34,7 @@ type Config struct {
 	// Host WS 监听地址，例如 "localhost" / "127.0.0.1" / "0.0.0.0"。
 	// 生产只在本机用，保持 "localhost" 即可，不要随便改成 0.0.0.0。
 	Host string `json:"host"`
-	// Port WS 监听端口，与 ../tampermonkey/pkf-local.js 中的 WS_URL 一致。
+	// Port WS 监听端口，与 ../tampermonkey/pkf-web2local.js 中的 WS_URL 一致。
 	Port int `json:"port"`
 	// EnginePath Pikafish 引擎可执行文件绝对路径。
 	EnginePath string `json:"engine_path"`
@@ -62,12 +68,15 @@ const (
 // ConfigFileName 配置文件名，与可执行文件同目录。
 const ConfigFileName = "config.json"
 
+// ConfigExampleFileName 是可编辑的配置模板文件名。
+const ConfigExampleFileName = "config.example.json"
+
 // DefaultConfig 返回默认配置（用于生成示例文件）。
 func DefaultConfig() Config {
 	return Config{
 		Host:           defaultHost,
 		Port:           defaultPort,
-		EnginePath:     `C:\path\to\pikafish-bmi2.exe`,
+		EnginePath:     "C:/path/to/pikafish-bmi2.exe",
 		HashMB:         defaultHashMB,
 		DrainBanner:    defaultDrainBanner,
 		AllowedOrigins: []string{"https://xiangqiai.com"},
@@ -106,13 +115,35 @@ func configPath() (string, error) {
 	return filepath.Join(dir, ConfigFileName), nil
 }
 
+func loadExampleConfig(dir string) (Config, error) {
+	data, err := os.ReadFile(filepath.Join(dir, ConfigExampleFileName))
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return Config{}, fmt.Errorf("read config template: %w", err)
+		}
+		data = embeddedConfigExample
+	}
+
+	cfg := DefaultConfig()
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return Config{}, fmt.Errorf("parse %s: %w", ConfigExampleFileName, err)
+	}
+	return cfg, nil
+}
+
 // LoadConfig 加载配置：
 //
 //  1. 找 exe 同目录下的 config.json；
-//  2. 不存在则把默认配置写入该路径，方便用户编辑，然后返回默认值；
-//  3. 存在则读取，缺失字段用默认值补齐。
+//  2. 优先读取同目录 config.example.json，不存在则使用嵌入 EXE 的模板；
+//  3. config.json 不存在时根据模板生成；
+//  4. config.json 存在时读取，缺失字段由模板补齐。
 func LoadConfig() (Config, string, bool, error) {
 	path, err := configPath()
+	if err != nil {
+		return Config{}, "", false, err
+	}
+
+	exampleCfg, err := loadExampleConfig(filepath.Dir(path))
 	if err != nil {
 		return Config{}, "", false, err
 	}
@@ -120,20 +151,83 @@ func LoadConfig() (Config, string, bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			cfg := DefaultConfig()
-			if werr := writeConfig(path, cfg); werr != nil {
+			if werr := writeConfig(path, exampleCfg); werr != nil {
 				return Config{}, "", false, fmt.Errorf("write default config: %w", werr)
 			}
-			return cfg, path, true, nil
+			return exampleCfg, path, true, nil
 		}
 		return Config{}, "", false, fmt.Errorf("read config: %w", err)
 	}
 
-	cfg := DefaultConfig()
+	cfg := exampleCfg
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return Config{}, "", false, fmt.Errorf("parse config %s: %w", path, err)
 	}
 	return cfg, path, false, nil
+}
+
+// normalizeEnginePath 清理引号、环境变量和路径分隔符，并转成绝对路径。
+// filepath.FromSlash 让 Windows 同时接受 C:/... 和 C:\...。
+func normalizeEnginePath(rawPath string) (string, error) {
+	value := strings.TrimSpace(rawPath)
+	if len(value) >= 2 {
+		first, last := value[0], value[len(value)-1]
+		if (first == '"' || first == '\'') && first == last {
+			value = strings.TrimSpace(value[1 : len(value)-1])
+		}
+	}
+	if value == "" {
+		return "", errors.New("engine path cannot be empty")
+	}
+	value = os.ExpandEnv(value)
+	value = filepath.FromSlash(value)
+	absPath, err := filepath.Abs(value)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(absPath), nil
+}
+
+func engineFileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+// EnsureEnginePath 在配置路径无效时从终端读取路径，验证后写回 config.json。
+func EnsureEnginePath(cfg *Config, configPath string, input io.Reader, output io.Writer) error {
+	if normalized, err := normalizeEnginePath(cfg.EnginePath); err == nil && engineFileExists(normalized) {
+		cfg.EnginePath = normalized
+		return nil
+	}
+
+	fmt.Fprintf(output, "[WARN] Pikafish engine not found: %s\n", cfg.EnginePath)
+	scanner := bufio.NewScanner(input)
+	for {
+		fmt.Fprint(output, "请输入 Pikafish 可执行文件路径（支持 / 或 \\，可拖入文件）: ")
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				return fmt.Errorf("read engine path: %w", err)
+			}
+			return errors.New("engine_path is invalid and no interactive input is available")
+		}
+
+		candidate, err := normalizeEnginePath(scanner.Text())
+		if err != nil {
+			fmt.Fprintf(output, "[WARN] %v\n", err)
+			continue
+		}
+		if !engineFileExists(candidate) {
+			fmt.Fprintf(output, "[WARN] file does not exist: %s\n", candidate)
+			continue
+		}
+
+		cfg.EnginePath = candidate
+		if err := writeConfig(configPath, *cfg); err != nil {
+			return fmt.Errorf("save engine_path: %w", err)
+		}
+		fmt.Fprintf(output, "[INFO] saved engine_path to: %s\n", configPath)
+		return nil
+	}
 }
 
 // ValidateConfig 在打开监听端口前校验所有会影响安全和运行的字段。

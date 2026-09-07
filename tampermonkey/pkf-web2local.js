@@ -1,5 +1,7 @@
 // ==UserScript==
-// @name         pkf-local
+// @name         pkf-web2local
+// @version      0.1.0
+// @description  Connect xiangqiai.com to a local Pikafish engine.
 // @match        https://xiangqiai.com/*
 // @run-at       document-start
 // @grant        none

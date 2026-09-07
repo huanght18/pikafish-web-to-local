@@ -11,6 +11,6 @@
   "log": {
     "console": true,
     "file": false,
-    "file_path": "pkf-local-go.log"
+    "file_path": "pkf-local-python.log"
   }
 }

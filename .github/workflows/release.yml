@@ -1,0 +1,87 @@
+name: Release Go executable
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows-amd64:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: GoVersion/go.mod
+          cache-dependency-path: GoVersion/go.sum
+
+      - name: Test
+        working-directory: GoVersion
+        run: go test ./...
+
+      - name: Verify userscript version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          script_version="$(sed -n 's|^// @version[[:space:]]*||p' tampermonkey/pkf-web2local.js | tr -d '\r')"
+          release_version="${GITHUB_REF_NAME#v}"
+          test -n "${script_version}"
+          test "${script_version}" = "${release_version}"
+
+      - name: Build and package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_name="pkf-web2local-${GITHUB_REF_NAME}-windows-amd64"
+          package_dir="dist/${package_name}"
+
+          mkdir -p "${package_dir}"
+          (
+            cd GoVersion
+            CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+              go build -trimpath -ldflags="-s -w" \
+              -o "../${package_dir}/pkf-web2local.exe" .
+          )
+          cp GoVersion/config.example.json "${package_dir}/"
+          cp tampermonkey/pkf-web2local.js "${package_dir}/pkf-web2local.user.js"
+
+          if [[ -d GoVersion/release-assets ]]; then
+            cp -R GoVersion/release-assets/. "${package_dir}/"
+          fi
+
+          (
+            cd dist
+            zip -r "${package_name}.zip" "${package_name}"
+            sha256sum "${package_name}.zip" > "${package_name}.zip.sha256"
+          )
+
+      - name: Create GitHub Release and upload package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" \
+              dist/*.zip \
+              dist/*.zip.sha256 \
+              --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              dist/*.zip \
+              dist/*.zip.sha256 \
+              --title "pkf-web2local ${GITHUB_REF_NAME}" \
+              --notes "$(cat .github/release-notes.md)" \
+              --verify-tag \
+              --generate-notes
+          fi

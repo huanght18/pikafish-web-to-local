@@ -1,7 +1,7 @@
 // pkf-local-go：把 main.py 的功能用 Go 重写（原文件名 servepkf2.py）。
 //
 // 工作流：
-//  1. 浏览器端的油猴脚本 ../tampermonkey/pkf-local.js 拦截 window.Pikafish.sendCommand，
+//  1. 浏览器端的油猴脚本 ../tampermonkey/pkf-web2local.js 拦截 window.Pikafish.sendCommand，
 //     把每条 UCI 命令作为一条 text message 发到 ws://<host>:<port>。
 //  2. 本服务为每条 WS 连接 fork 一个 Pikafish 引擎子进程，
 //     双向转发 UCI 命令与引擎输出，关闭时清理子进程。
@@ -41,9 +41,11 @@ func main() {
 		os.Exit(1)
 	}
 	if created {
-		fmt.Printf("[INFO] wrote default config: %s\n", path)
-		fmt.Println("[INFO] edit engine_path if needed, then restart")
-		return
+		fmt.Printf("[INFO] created config from %s: %s\n", ConfigExampleFileName, path)
+	}
+	if err := EnsureEnginePath(&cfg, path, os.Stdin, os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "[FATAL] configure engine_path: %v\n", err)
+		os.Exit(1)
 	}
 
 	if *flagHost != "" {

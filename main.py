@@ -18,11 +18,12 @@ import websockets
 
 
 CONFIG_FILENAME = "config.json"
+CONFIG_EXAMPLE_FILENAME = "config.example.json"
 LOG_DIRNAME = "logs"
 DEFAULTS = {
     "host": "localhost",
     "port": 8765,
-    "engine_path": r"D:\Personal\ChineseChess\pikafish-20260131\pikafish-bmi2.exe",
+    "engine_path": "C:/path/to/pikafish-bmi2.exe",
     "hash_mb": 512,
     "drain_banner": True,
     "allowed_origins": ["https://xiangqiai.com"],
@@ -57,21 +58,10 @@ def script_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-def load_config():
-    """读取配置，返回 (config, path, created)。"""
-    config_path = os.path.join(script_dir(), CONFIG_FILENAME)
-    if not os.path.exists(config_path):
-        with open(config_path, "w", encoding="utf-8") as file:
-            json.dump(DEFAULTS, file, indent=2, ensure_ascii=False)
-            file.write("\n")
-        return copy.deepcopy(DEFAULTS), config_path, True
-
-    with open(config_path, "r", encoding="utf-8") as file:
-        user_cfg = json.load(file)
+def merge_config(base_cfg, user_cfg):
     if not isinstance(user_cfg, dict):
         raise ValueError("config root must be a JSON object")
-
-    cfg = copy.deepcopy(DEFAULTS)
+    cfg = copy.deepcopy(base_cfg)
     for key, value in user_cfg.items():
         if key in cfg and key != "log":
             cfg[key] = value
@@ -79,7 +69,84 @@ def load_config():
         if not isinstance(user_cfg["log"], dict):
             raise ValueError("log must be a JSON object")
         cfg["log"].update(user_cfg["log"])
-    return cfg, config_path, False
+    return cfg
+
+
+def read_json_config(path):
+    with open(path, "r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def write_config(path, cfg):
+    temp_path = path + ".tmp"
+    with open(temp_path, "w", encoding="utf-8") as file:
+        json.dump(cfg, file, indent=2, ensure_ascii=False)
+        file.write("\n")
+    os.replace(temp_path, path)
+
+
+def load_config():
+    """按 config.example.json 加载或创建 config.json。"""
+    example_path = os.path.join(script_dir(), CONFIG_EXAMPLE_FILENAME)
+    if not os.path.isfile(example_path):
+        raise FileNotFoundError(f"missing config template: {example_path}")
+    example_cfg = merge_config(DEFAULTS, read_json_config(example_path))
+
+    config_path = os.path.join(script_dir(), CONFIG_FILENAME)
+    if not os.path.exists(config_path):
+        write_config(config_path, example_cfg)
+        return example_cfg, config_path, True
+
+    return merge_config(example_cfg, read_json_config(config_path)), config_path, False
+
+
+def normalize_engine_path(raw_path):
+    """规范化手输或拖入的路径，同时接受两种路径分隔符。"""
+    value = str(raw_path).strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        value = value[1:-1].strip()
+    if not value:
+        raise ValueError("engine path cannot be empty")
+    value = os.path.expandvars(os.path.expanduser(value))
+    value = value.replace("/", os.sep).replace("\\", os.sep)
+    return os.path.abspath(os.path.normpath(value))
+
+
+def ensure_engine_path(cfg, config_path, input_fn=input):
+    """路径无效时交互获取 Pikafish 路径，校验后写回 config.json。"""
+    current_path = cfg.get("engine_path", "")
+    try:
+        normalized = normalize_engine_path(current_path)
+    except ValueError:
+        normalized = ""
+    if normalized and os.path.isfile(normalized):
+        cfg["engine_path"] = normalized
+        return cfg
+
+    print(f"[WARN] Pikafish engine not found: {current_path}")
+    while True:
+        try:
+            raw_path = input_fn(
+                "请输入 Pikafish 可执行文件路径（支持 / 或 \\，可拖入文件）: "
+            )
+        except EOFError as error:
+            raise ValueError(
+                "engine_path is invalid and no interactive input is available"
+            ) from error
+
+        try:
+            candidate = normalize_engine_path(raw_path)
+        except ValueError as error:
+            print(f"[WARN] {error}")
+            continue
+        if not os.path.isfile(candidate):
+            print(f"[WARN] file does not exist: {candidate}")
+            continue
+
+        cfg["engine_path"] = candidate
+        write_config(config_path, cfg)
+        print(f"[INFO] saved engine_path to: {config_path}")
+        return cfg
 
 
 def validate_config(cfg):
@@ -313,9 +380,8 @@ def main():
     try:
         cfg, path, created = load_config()
         if created:
-            print(f"[INFO] wrote default config: {path}")
-            print("[INFO] edit engine_path if needed, then restart")
-            return
+            print(f"[INFO] created config from {CONFIG_EXAMPLE_FILENAME}: {path}")
+        cfg = ensure_engine_path(cfg, path)
         validate_config(cfg)
         apply_config(cfg)
         _log_file_handle = _open_log_file()

@@ -6,7 +6,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(
-  path.join(__dirname, "..", "tampermonkey", "pkf-local.js"),
+  path.join(__dirname, "..", "tampermonkey", "pkf-web2local.js"),
   "utf8",
 );
 

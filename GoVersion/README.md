@@ -11,7 +11,7 @@
 - 浏览器 Origin 白名单和同时运行的引擎数量限制
 - 服务退出时主动关闭 WS，并等待对应引擎完成回收
 
-油猴脚本 `../tampermonkey/pkf-local.js` **无需任何改动**，因为协议沿用"一行一条 text message"。
+油猴脚本 `../tampermonkey/pkf-web2local.js` **无需任何改动**，因为协议沿用"一行一条 text message"。
 
 ## 目录结构
 
@@ -30,15 +30,21 @@ GoVersion/
 
 ## 配置：`config.json`
 
-exe 启动时会读**同目录**下的 `config.json`。文件不存在则自动生成一份默认配置（字段值与 `config.example.json` 一致），方便直接编辑。
+exe 启动时会读取**同目录**下的 `config.json`。文件不存在时，会优先根据同目录的
+`config.example.json` 生成；如果外部模板不存在，则使用已经嵌入 EXE 的同版模板。
+
+模板里的 `engine_path` 是假路径。路径不存在时，程序会在终端询问真实的 Pikafish
+可执行文件路径，验证成功后写回 `config.json` 并继续启动。输入支持 `/` 和 `\`
+两种分隔符，也支持直接拖入带引号的文件路径。
+手动编辑 JSON 时，反斜杠必须按 JSON 语法写成 `\\`；也可以直接使用 `/`。
 
 字段含义：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `host` | string | WS 监听地址；仅允许 `localhost`、`127.0.0.1` 或 `::1` |
-| `port` | int | WS 监听端口，需与 `../tampermonkey/pkf-local.js` 中 `WS_URL` 一致 |
-| `engine_path` | string | Pikafish 引擎绝对路径（**必填**），例如 `C:\path\to\pikafish-bmi2.exe` |
+| `port` | int | WS 监听端口，需与 `../tampermonkey/pkf-web2local.js` 中 `WS_URL` 一致 |
+| `engine_path` | string | Pikafish 引擎绝对路径；交互输入支持 `C:/...` 和 `C:\...` |
 | `hash_mb` | int | 强制覆写的 Hash 大小（MB）。网页对 >384MB 只会传 384，这里统一改成目标值 |
 | `drain_banner` | bool | 是否吞掉引擎启动后的第一行 banner；通常 `true` |
 | `allowed_origins` | string[] | 允许发起连接的网页 Origin；默认仅 `https://xiangqiai.com` |
@@ -62,7 +68,7 @@ go build -ldflags "-s -w" -o pkf-local-go.exe .
 ```
 
 生成 `GoVersion\pkf-local-go.exe`，**双击即可运行**，无需再装 Go。
-exe 首次启动会在同目录生成 `config.json` 后退出，编辑后再次双击即生效。
+首次启动生成配置后会直接询问引擎路径；输入有效路径即可继续运行，无需手动编辑并重启。
 
 ## 设置图标
 
@@ -122,7 +128,7 @@ go run .
 - `cmd.Wait()` 必须在 `Process.Kill()` 之后调用，否则 Windows 上会留僵尸进程 / 句柄。
 - `gorilla/websocket` 的 `Upgrader.CheckOrigin` 会校验 `allowed_origins`；无 Origin 的本机原生客户端仍可调试。
 
-## 与 `../tampermonkey/pkf-local.js` 的协议契约
+## 与 `../tampermonkey/pkf-web2local.js` 的协议契约
 
 - WS 帧类型：仅 `TextMessage`。
 - 每条 UCI 命令作为**一条 text message**，不含 `\n`（服务端 trim 后回填 `\n` 写入引擎）。
@@ -132,7 +138,8 @@ go run .
 ## 常见问题
 
 - **油猴脚本回退到 WASM**：本服务未启动、连接超时、端口不一致或 Origin 未在白名单。检查 `[Go] ws server listening on ws://...` 是否出现。
-- **`[ERR] start engine: ...`**：`engine_path` 不存在或没有运行权限。改成绝对路径、必要时用管理员权限启动终端。
+- **提示输入引擎路径**：当前 `engine_path` 不存在。可粘贴或拖入 Pikafish EXE，路径中的 `/` 和 `\` 均可。
+- **`[ERR] start engine: ...`**：文件存在但没有运行权限或无法启动，必要时检查安全软件和文件权限。
 - **多标签页面同时使用**：每个标签 = 一个独立引擎进程，与 Python 版一致，刷新页面引擎即重建。
 - **想清空 Hash 表**：刷新页面即可，引擎子进程随 WS 断开被 Kill 掉。
 

@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -88,6 +92,11 @@ func TestExeDirUsesWorkingDirectoryDuringGoRunOrTest(t *testing.T) {
 
 func TestLoadConfigCreatesEditableFileInWorkingDirectory(t *testing.T) {
 	tempDir := t.TempDir()
+	example := DefaultConfig()
+	example.HashMB = 1024
+	if err := writeConfig(filepath.Join(tempDir, ConfigExampleFileName), example); err != nil {
+		t.Fatal(err)
+	}
 	oldWorkingDirectory, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -104,11 +113,76 @@ func TestLoadConfigCreatesEditableFileInWorkingDirectory(t *testing.T) {
 	if !created {
 		t.Fatal("expected LoadConfig to create a missing config")
 	}
-	if candidate.EnginePath != `C:\path\to\pikafish-bmi2.exe` {
+	if candidate.EnginePath != "C:/path/to/pikafish-bmi2.exe" {
 		t.Fatalf("unexpected placeholder engine path %q", candidate.EnginePath)
+	}
+	if candidate.HashMB != 1024 {
+		t.Fatalf("config wasn't generated from external template: hash_mb=%d", candidate.HashMB)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("generated config isn't accessible: %v", err)
+	}
+}
+
+func TestNormalizeEnginePathAcceptsBothSeparators(t *testing.T) {
+	enginePath := filepath.Join(t.TempDir(), "pikafish.exe")
+	want, err := filepath.Abs(enginePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	forward := strings.ReplaceAll(enginePath, string(filepath.Separator), "/")
+	got, err := normalizeEnginePath(forward)
+	if err != nil || got != want {
+		t.Fatalf("forward slash path = %q, %v; want %q", got, err, want)
+	}
+
+	if runtime.GOOS == "windows" {
+		backward := strings.ReplaceAll(enginePath, "/", "\\")
+		got, err = normalizeEnginePath(backward)
+		if err != nil || got != want {
+			t.Fatalf("backslash path = %q, %v; want %q", got, err, want)
+		}
+	}
+}
+
+func TestEnsureEnginePathPromptsAndPersists(t *testing.T) {
+	tempDir := t.TempDir()
+	enginePath := filepath.Join(tempDir, "pikafish.exe")
+	if err := os.WriteFile(enginePath, []byte("test"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(tempDir, ConfigFileName)
+	candidate := DefaultConfig()
+	if err := writeConfig(configPath, candidate); err != nil {
+		t.Fatal(err)
+	}
+
+	inputPath := strings.ReplaceAll(enginePath, string(filepath.Separator), "/")
+	var output bytes.Buffer
+	if err := EnsureEnginePath(
+		&candidate,
+		configPath,
+		strings.NewReader("\""+inputPath+"\"\n"),
+		&output,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	want, _ := filepath.Abs(enginePath)
+	if candidate.EnginePath != want {
+		t.Fatalf("EnginePath = %q, want %q", candidate.EnginePath, want)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved Config
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.EnginePath != want {
+		t.Fatalf("saved EnginePath = %q, want %q", saved.EnginePath, want)
 	}
 }
 
